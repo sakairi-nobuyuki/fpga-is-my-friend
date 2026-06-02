@@ -58,6 +58,7 @@ void TimerCounterHandler(void *CallBackRef)
 
     cnt++;
     if (cnt > 9) cnt = 0; /* Clear if counter exceeds 9 */
+    XGpio_DiscreteWrite(&Gpio, LED_CHANNEL, led_rgb(cnt));
 
 }
 
@@ -67,11 +68,13 @@ int ScuGicInit(void)
 {
     int Status;
     XScuGic_Config *ConfigPtr;
-    
-//    ConfigPtr = XScuGic_LookupConfig(XPAR_PS7_SCUGIC_0_DEVICE_ID); // XPAR_SCUTIMER_DEVICE_ID
-//    ConfigPtr = XScuGic_LookupConfig(XPAR_SCUTIMER_DEVICE_ID); // XPAR_SCUTIMER_DEVICE_ID
-// [ERROR] /home/nsakairi/cora_z7_ws/second/second.vitis/second/src/second.c:58:38: error: 
-// 'XPAR_XSCUGIC_0_BASEDDR' undeclared (first use in this function); did you mean 'XPAR_XSCUGIC_0_BASEADDR'?
+
+
+/** Original in the textbook
+ * XPAR_SCUTIMER_DEVICE_ID is old or not compatible to CoraS7
+    ConfigPtr = XScuGic_LookupConfig(XPAR_PS7_SCUGIC_0_DEVICE_ID); // XPAR_SCUTIMER_DEVICE_ID
+ */
+
     ConfigPtr = XScuGic_LookupConfig(XPAR_XSCUGIC_0_BASEADDR); // XPAR_SCUTIMER_DEVICE_ID
     Status = XScuGic_CfgInitialize(&IntcInstance, ConfigPtr, ConfigPtr->CpuBaseAddress);
     if (Status != XST_SUCCESS) {
@@ -79,10 +82,18 @@ int ScuGicInit(void)
         return XST_FAILURE;
     }
 
+    Xil_ExceptionInit();
+    Xil_ExceptionRegisterHandler(
+        XIL_EXCEPTION_ID_INT, (Xil_ExceptionHandler) XScuGic_InterruptHandler, &IntcInstance
+    );
+    Xil_ExceptionEnable();
+/** Original in the textbook
+ * Xil_ExceptionRegisterHandler is not applicable for CoraS7
     Xil_ExceptionRegisterHandler(
         XIL_EXCEPTION_ID_INT, (Xil_ExceptionHandler) XScuGic_DeviceInterruptHandler, &IntcInstance
     );
     Xil_ExceptionEnable();
+*/
     return XST_SUCCESS;
 }
 
@@ -119,23 +130,32 @@ int main ()
 
     /* Initialize Timer Driver */
     xil_printf("Initializing timer\n");
-//    ConfigPtr = XScuTimer_LookupConfig(XPAR_XSCUTIMER_0_DEVICE_ID);
+
+    /** Original in the textbook
+     * 
+     ConfigPtr = XScuTimer_LookupConfig(XPAR_XSCUTIMER_0_DEVICE_ID);
+     */
     ConfigPtr = XScuTimer_LookupConfig(XPAR_XSCUTIMER_0_BASEADDR);
     Status = XScuTimer_CfgInitialize(&TimerInstance, ConfigPtr, ConfigPtr->BaseAddr);
     if (Status != XST_SUCCESS) {
         xil_printf("Timer driver XScuTimer_LookupConfig failed\n\n");
         return XST_FAILURE;
     }
-    
     xil_printf("Initialized timer\n\n");
 
     /* Initialize interrupt related and interrupt handler */
     xil_printf("Initializing interrupt\n");
     Status = ScuGicInit();
-    if (Status != XST_SUCCESS) return XST_FAILURE;
+    if (Status != XST_SUCCESS) {
+        xil_printf("Failed to initialize interrupt\n");
+        return XST_FAILURE;
+    }
 //    Status = ScuGicInit_Reg(XPAR_SCUTIMER_INTR, &TimerInstance, TimerCounterHandler);
     Status = ScuGicInit_Reg(SCUTIMER_INTR_ID, &TimerInstance, TimerCounterHandler);
-    if (Status != XST_SUCCESS) return XST_FAILURE;
+    if (Status != XST_SUCCESS) {
+        xil_printf("Failed to initialize interrupt reg\n\n");
+        return XST_FAILURE;
+    }
     xil_printf("Initialized interrupt\n\n");
 
     /* Initialize timer and start */
